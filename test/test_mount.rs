@@ -10,16 +10,17 @@ extern crate tempdir;
 #[cfg(target_os = "linux")]
 mod test_mount {
     use std::fs::{self, File};
-    use std::io::{Read, Write};
+    use std::io::{self, Read, Write};
     use std::os::unix::fs::OpenOptionsExt;
     use std::os::unix::fs::PermissionsExt;
-    use std::process::Command;
+    use std::process::{self, Command};
 
     use libc::{self, EACCES, EROFS};
 
     use nix::mount::{mount, umount, MsFlags, MS_BIND, MS_RDONLY, MS_NOEXEC};
     use nix::sched::{unshare, CLONE_NEWNS, CLONE_NEWUSER};
     use nix::sys::stat::{self, S_IRWXU, S_IRWXG, S_IRWXO, S_IXUSR, S_IXGRP, S_IXOTH};
+    use nix::unistd::getuid;
 
     use tempdir::TempDir;
 
@@ -171,11 +172,18 @@ exit 23";
 
     pub fn setup_namespaces() {
         // Hold on to the uid in the parent namespace.
-        let uid = unsafe { libc::getuid() };
+        let uid = getuid();
 
         unshare(CLONE_NEWNS | CLONE_NEWUSER).unwrap_or_else(|e| {
-            panic!("unshare failed: {}. Are unprivileged user namespaces available?",
-                   e)
+            let stderr = io::stderr();
+            let mut handle = stderr.lock();
+            writeln!(handle,
+                     "unshare failed: {}. Are unprivileged user namespaces available?",
+                     e);
+            writeln!(handle, "mount is not being tested");
+            // Exit with success because not all systems support unprivileged user namespaces, and
+            // that's not what we're testing for.
+            process::exit(0);
         });
 
         // Map user as uid 1000.

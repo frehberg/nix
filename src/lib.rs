@@ -13,12 +13,23 @@
 #[macro_use]
 extern crate bitflags;
 
-pub extern crate libc;
+#[macro_use]
+extern crate cfg_if;
+extern crate void;
 
 #[cfg(test)]
 extern crate nix_test as nixtest;
 
-// Re-exports
+#[macro_use] mod macros;
+
+// In rust 1.8+ this should be `pub extern crate libc` but prior
+// to https://github.com/rust-lang/rust/issues/26775 being resolved
+// it is necessary to get a little creative.
+pub mod libc {
+    extern crate libc;
+    pub use self::libc::*;
+}
+
 pub use libc::{c_int, c_void};
 pub use errno::Errno;
 
@@ -41,6 +52,13 @@ pub mod net;
 pub mod sched;
 
 pub mod sys;
+
+// This can be implemented for other platforms as soon as libc
+// provides bindings for them.
+#[cfg(all(target_os = "linux",
+          any(target_arch = "x86", target_arch = "x86_64")))]
+pub mod ucontext;
+
 pub mod unistd;
 
 /*

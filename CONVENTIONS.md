@@ -19,15 +19,46 @@ We use the functions exported from [libc][libc] instead of writing our own
 `extern` declarations.
 
 We use the `struct` definitions from [libc][libc] internally instead of writing
-our own.
+our own. If we want to add methods to a libc type, we use the newtype pattern.
+For example,
+
+```rust
+pub struct SigSet(libc::sigset_t);
+
+impl SigSet {
+    ...
+}
+```
+
+When creating newtypes, we use Rust's `CamelCase` type naming convention.
 
 ## Bitflags
 
-We represent sets of constants that are intended to be combined using bitwise
-operations as parameters to functions by types defined using the `bitflags!`
-macro from the [bitflags crate][bitflags].
+Many C functions have flags parameters that are combined from constants using
+bitwise operations. We represent the types of these parameters by types defined
+using our `libc_bitflags!` macro, which is a convenience wrapper around the
+`bitflags!` macro from the [bitflags crate][bitflags] that brings in the
+constant value from `libc`.
+
 We name the type for a set of constants whose element's names start with `FOO_`
 `FooFlags`.
+
+For example,
+
+```rust
+libc_bitflags!{
+    flags ProtFlags: libc::c_int {
+        PROT_NONE,
+        PROT_READ,
+        PROT_WRITE,
+        PROT_EXEC,
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        PROT_GROWSDOWN,
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        PROT_GROWSUP,
+    }
+}
+```
 
 
 ## Enumerations

@@ -1,5 +1,6 @@
 use std::mem;
 use std::os::unix::io::RawFd;
+use std::option::Option;
 use libc::{self, c_int, c_void, c_ulong, pid_t};
 use {Errno, Result};
 
@@ -87,7 +88,7 @@ mod cpuset_attribs {
     }
 }
 
-#[cfg(all(target_arch = "arm", any(target_os = "linux", target_os = "android")))]
+#[cfg(all(any(target_arch = "arm", target_arch = "mips"), target_os = "android"))]
 mod cpuset_attribs {
     use super::CpuMask;
     // bionic only supports up to 32 independent CPUs, instead of 1024.
@@ -105,6 +106,22 @@ mod cpuset_attribs {
     }
 }
 
+#[cfg(all(any(target_arch = "arm", target_arch = "mips"), target_os = "linux"))]
+mod cpuset_attribs {
+    use super::CpuMask;
+    pub const CPU_SETSIZE:          usize = 1024;
+    pub const CPU_MASK_BITS:        usize = 32;
+
+    #[inline]
+    pub fn set_cpu_mask_flag(cur: CpuMask, bit: usize) -> CpuMask {
+        cur | (1u32 << bit)
+    }
+
+    #[inline]
+    pub fn clear_cpu_mask_flag(cur: CpuMask, bit: usize) -> CpuMask {
+        cur & !(1u32 << bit)
+    }
+}
 
 pub type CloneCb<'a> = Box<FnMut() -> isize + 'a>;
 
@@ -181,15 +198,19 @@ pub fn sched_setaffinity(pid: isize, cpuset: &CpuSet) -> Result<()> {
     Errno::result(res).map(drop)
 }
 
-pub fn clone(mut cb: CloneCb, stack: &mut [u8], flags: CloneFlags) -> Result<pid_t> {
+pub fn clone(mut cb: CloneCb, stack: &mut [u8], flags: CloneFlags, signal: Option<c_int>) -> Result<pid_t> {
     extern "C" fn callback(data: *mut CloneCb) -> c_int {
         let cb: &mut CloneCb = unsafe { &mut *data };
         (*cb)() as c_int
     }
 
     let res = unsafe {
+        let combined = flags.bits() | signal.unwrap_or(0);
         let ptr = stack.as_mut_ptr().offset(stack.len() as isize);
-        ffi::clone(mem::transmute(callback), ptr as *mut c_void, flags.bits(), &mut cb)
+        ffi::clone(mem::transmute(callback as extern "C" fn(*mut Box<::std::ops::FnMut() -> isize>) -> i32),
+                   ptr as *mut c_void,
+                   combined,
+                   &mut cb)
     };
 
     Errno::result(res)

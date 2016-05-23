@@ -11,41 +11,52 @@ pub use libc::{
     SIGINT,
     SIGQUIT,
     SIGILL,
+    SIGTRAP,
     SIGABRT,
+    SIGBUS,
     SIGFPE,
     SIGKILL,
+    SIGUSR1,
     SIGSEGV,
+    SIGUSR2,
     SIGPIPE,
     SIGALRM,
     SIGTERM,
-    SIGTRAP,
-    SIGIOT,
-    SIGBUS,
-    SIGSYS,
-    SIGURG,
+    SIGCHLD,
+    SIGCONT,
     SIGSTOP,
     SIGTSTP,
-    SIGCONT,
-    SIGCHLD,
     SIGTTIN,
     SIGTTOU,
-    SIGIO,
+    SIGURG,
     SIGXCPU,
     SIGXFSZ,
     SIGVTALRM,
     SIGPROF,
     SIGWINCH,
-    SIGUSR1,
-    SIGUSR2,
+    SIGIO,
+    SIGSYS,
 };
 
-// This doesn't always exist, but when it does, it's 7
-pub const SIGEMT: libc::c_int = 7;
+#[cfg(target_os = "macos")]
+pub use libc::{
+    SIGEMT,
+    SIGINFO,
+};
+
+#[cfg(not(target_os = "macos"))]
+pub use libc::{
+    SIGPWR,
+    SIGSTKFLT,
+    SIGIOT, // Alias for SIGABRT
+    SIGPOLL, // Alias for SIGIO
+    SIGUNUSED, // Alias for 31
+};
 
 pub const NSIG: libc::c_int = 32;
 
 bitflags!{
-    flags SaFlag: libc::c_int {
+    flags SaFlags: libc::c_int {
         const SA_NOCLDSTOP = libc::SA_NOCLDSTOP,
         const SA_NOCLDWAIT = libc::SA_NOCLDWAIT,
         const SA_NODEFER   = libc::SA_NODEFER,
@@ -57,17 +68,10 @@ bitflags!{
 }
 
 bitflags!{
-    flags SigFlag: libc::c_int {
+    flags SigFlags: libc::c_int {
         const SIG_BLOCK   = libc::SIG_BLOCK,
         const SIG_UNBLOCK = libc::SIG_UNBLOCK,
         const SIG_SETMASK = libc::SIG_SETMASK,
-    }
-}
-
-mod ffi {
-    use libc;
-    extern {
-        pub fn sigwait(set: *const libc::sigset_t, sig: *mut libc::c_int) -> libc::c_int;
     }
 }
 
@@ -99,10 +103,25 @@ impl SigSet {
         Errno::result(res).map(drop)
     }
 
+    pub fn clear(&mut self) -> Result<()> {
+        let res = unsafe { libc::sigemptyset(&mut self.sigset as *mut libc::sigset_t) };
+
+        Errno::result(res).map(drop)
+    }
+
     pub fn remove(&mut self, signum: SigNum) -> Result<()> {
         let res = unsafe { libc::sigdelset(&mut self.sigset as *mut libc::sigset_t, signum) };
 
         Errno::result(res).map(drop)
+    }
+
+    pub fn extend(&mut self, other: &SigSet) -> Result<()> {
+        for i in 1..NSIG {
+            if try!(other.contains(i)) {
+                try!(self.add(i));
+            }
+        }
+        Ok(())
     }
 
     pub fn contains(&self, signum: SigNum) -> Result<bool> {
@@ -118,7 +137,7 @@ impl SigSet {
     /// Gets the currently blocked (masked) set of signals for the calling thread.
     pub fn thread_get_mask() -> Result<SigSet> {
         let mut oldmask: SigSet = unsafe { mem::uninitialized() };
-        try!(pthread_sigmask(SigFlag::empty(), None, Some(&mut oldmask)));
+        try!(pthread_sigmask(SigFlags::empty(), None, Some(&mut oldmask)));
         Ok(oldmask)
     }
 
@@ -138,7 +157,7 @@ impl SigSet {
     }
 
     /// Sets the set of signals as the signal mask, and returns the old mask.
-    pub fn thread_swap_mask(&self, how: SigFlag) -> Result<SigSet> {
+    pub fn thread_swap_mask(&self, how: SigFlags) -> Result<SigSet> {
         let mut oldmask: SigSet = unsafe { mem::uninitialized() };
         try!(pthread_sigmask(how, Some(self), Some(&mut oldmask)));
         Ok(oldmask)
@@ -148,7 +167,7 @@ impl SigSet {
     /// signal mask becomes pending, and returns the accepted signal.
     pub fn wait(&self) -> Result<SigNum> {
         let mut signum: SigNum = unsafe { mem::uninitialized() };
-        let res = unsafe { ffi::sigwait(&self.sigset as *const libc::sigset_t, &mut signum) };
+        let res = unsafe { libc::sigwait(&self.sigset as *const libc::sigset_t, &mut signum) };
 
         Errno::result(res).map(|_| signum)
     }
@@ -161,7 +180,7 @@ impl AsRef<libc::sigset_t> for SigSet {
 }
 
 #[allow(unknown_lints)]
-#[allow(raw_pointer_derive)]
+#[cfg_attr(not(raw_pointer_derive_allowed), allow(raw_pointer_derive))]
 #[derive(Clone, Copy, PartialEq)]
 pub enum SigHandler {
     SigDfl,
@@ -177,7 +196,7 @@ pub struct SigAction {
 impl SigAction {
     /// This function will set or unset the flag `SA_SIGINFO` depending on the
     /// type of the `handler` argument.
-    pub fn new(handler: SigHandler, flags: SaFlag, mask: SigSet) -> SigAction {
+    pub fn new(handler: SigHandler, flags: SaFlags, mask: SigSet) -> SigAction {
         let mut s = unsafe { mem::uninitialized::<libc::sigaction>() };
         s.sa_sigaction = match handler {
             SigHandler::SigDfl => unsafe { mem::transmute(libc::SIG_DFL) },
@@ -219,7 +238,7 @@ pub unsafe fn sigaction(signum: SigNum, sigaction: &SigAction) -> Result<SigActi
 ///
 /// For more information, visit the [pthread_sigmask](http://man7.org/linux/man-pages/man3/pthread_sigmask.3.html),
 /// or [sigprocmask](http://man7.org/linux/man-pages/man2/sigprocmask.2.html) man pages.
-pub fn pthread_sigmask(how: SigFlag,
+pub fn pthread_sigmask(how: SigFlags,
                        set: Option<&SigSet>,
                        oldset: Option<&mut SigSet>) -> Result<()> {
     if set.is_none() && oldset.is_none() {
@@ -268,6 +287,28 @@ mod tests {
     }
 
     #[test]
+    fn test_clear() {
+        let mut set = SigSet::all();
+        set.clear().unwrap();
+        for i in 1..NSIG {
+            assert_eq!(set.contains(i), Ok(false));
+        }
+    }
+
+    #[test]
+    fn test_extend() {
+        let mut one_signal = SigSet::empty();
+        one_signal.add(SIGUSR1).unwrap();
+
+        let mut two_signals = SigSet::empty();
+        two_signals.add(SIGUSR2).unwrap();
+        two_signals.extend(&one_signal).unwrap();
+
+        assert_eq!(two_signals.contains(SIGUSR1), Ok(true));
+        assert_eq!(two_signals.contains(SIGUSR2), Ok(true));
+    }
+
+    #[test]
     fn test_thread_signal_block() {
         let mut mask = SigSet::empty();
         mask.add(SIGUSR1).unwrap();
@@ -292,6 +333,8 @@ mod tests {
         assert!(!oldmask.contains(SIGUSR2).unwrap());
     }
 
+    // TODO(#251): Re-enable after figuring out flakiness.
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     #[test]
     fn test_sigwait() {
         let mut mask = SigSet::empty();

@@ -43,7 +43,11 @@ We use labels to help manage issues. The structure is modeled after
 [Rust's issue labeling scheme][rust-labels]:
 - **A-**prefixed labels state which area of the project the issue
   relates to
+- **E-**prefixed labels explain the level of experience necessary to fix the
+  issue
 - **O-**prefixed labels specify the OS for issues that are OS-specific
+- **R-**prefixed labels specify the architecture for issues that are
+  architecture-specific
 
 [rust-labels]: https://github.com/rust-lang/rust/blob/master/CONTRIBUTING.md#issue-triage
 
@@ -70,8 +74,11 @@ environment. We also have [continuous integration set up on
 Travis-CI][travis-ci], which might find some issues on other platforms. The CI
 will run once you open a pull request.
 
-[travis-ci]: https://travis-ci.org/nix-rust/nix
+There is also infrastructure for running tests for other targets
+locally.  More information is available in the [CI Readme][ci-readme].
 
+[travis-ci]: https://travis-ci.org/nix-rust/nix
+[ci-readme]: ci/README.md
 
 ## Homu, the bot who merges all the PRs
 
