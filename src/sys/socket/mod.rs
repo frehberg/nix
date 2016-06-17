@@ -30,6 +30,7 @@ pub use self::addr::{
     IpAddr,
     Ipv4Addr,
     Ipv6Addr,
+    CanAddr,
 };
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub use ::sys::socket::addr::netlink::NetlinkAddr;
@@ -41,6 +42,7 @@ pub use libc::{
     sockaddr_in,
     sockaddr_in6,
     sockaddr_un,
+    sockaddr_can,
     sa_family_t,
 };
 

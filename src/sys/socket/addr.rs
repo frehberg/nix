@@ -7,6 +7,7 @@ use std::path::Path;
 use std::os::unix::ffi::OsStrExt;
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use ::sys::socket::addr::netlink::NetlinkAddr;
+use std::hash::{Hash};
 
 // TODO: uncomment out IpAddr functions: rust-lang/rfcs#988
 
@@ -26,6 +27,8 @@ pub enum AddressFamily {
     Netlink = consts::AF_NETLINK,
     #[cfg(any(target_os = "linux", target_os = "android"))]
     Packet = consts::AF_PACKET,
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+	Can = consts::AF_CAN,
 }
 
 #[derive(Copy)]
@@ -457,6 +460,58 @@ impl fmt::Display for UnixAddr {
 
 /*
  *
+ * ===== CanAddr =====
+ *
+ */
+
+#[derive(Copy, Clone)]
+pub struct CanAddr(pub libc::sockaddr_can);
+
+
+impl CanAddr {
+    /// Create a new sockaddr_un representing a filesystem path.
+    pub fn new(can_idx:u32) -> Result<CanAddr> {
+        let caddr = libc::can_isotp { rx: 0, tx: 0};
+         
+        let addr = CanAddr ( libc::sockaddr_can {
+                can_family: AddressFamily::Can as sa_family_t,
+                can_ifindex: can_idx,
+                canaddr : libc::can_addr { tp: caddr  }
+            }
+        );
+
+        Ok(addr)
+    }
+}
+
+
+impl PartialEq for CanAddr {
+    fn eq(&self, other: &CanAddr) -> bool {
+        self.0.can_ifindex == other.0.can_ifindex
+    }
+}
+
+impl Eq for CanAddr {
+}
+
+impl hash::Hash for CanAddr {
+    fn hash<H: hash::Hasher>(&self, s: &mut H) {
+        let a : libc::sockaddr_can = self.0;
+        ( self.0.can_family, 
+          self.0.can_ifindex, 
+          a.canaddr.tp.rx,
+          a.canaddr.tp.tx ).hash(s)
+    }
+}
+
+impl fmt::Display for CanAddr {
+	    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{}", self.0.can_ifindex)
+	    }   
+}
+   
+/*
+ *
  * ===== Sock addr =====
  *
  */
@@ -467,7 +522,8 @@ pub enum SockAddr {
     Inet(InetAddr),
     Unix(UnixAddr),
     #[cfg(any(target_os = "linux", target_os = "android"))]
-    Netlink(NetlinkAddr)
+    Netlink(NetlinkAddr),
+    Can(CanAddr)
 }
 
 impl SockAddr {
@@ -484,6 +540,11 @@ impl SockAddr {
         SockAddr::Netlink(NetlinkAddr::new(pid, groups))
     }
 
+   #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub fn new_can(can_idx: u32) -> SockAddr {
+        SockAddr::Can(CanAddr::new(can_idx).unwrap())
+    }
+    
     pub fn family(&self) -> AddressFamily {
         match *self {
             SockAddr::Inet(InetAddr::V4(..)) => AddressFamily::Inet,
@@ -491,6 +552,8 @@ impl SockAddr {
             SockAddr::Unix(..) => AddressFamily::Unix,
             #[cfg(any(target_os = "linux", target_os = "android"))]
             SockAddr::Netlink(..) => AddressFamily::Netlink,
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            SockAddr::Can(..) => AddressFamily::Can,
         }
     }
 
@@ -505,6 +568,7 @@ impl SockAddr {
             SockAddr::Unix(UnixAddr(ref addr, len)) => (mem::transmute(addr), (len + mem::size_of::<libc::sa_family_t>()) as libc::socklen_t),
             #[cfg(any(target_os = "linux", target_os = "android"))]
             SockAddr::Netlink(NetlinkAddr(ref sa)) => (mem::transmute(sa), mem::size_of::<libc::sockaddr_nl>() as libc::socklen_t),
+            SockAddr::Can(ref addr) => (mem::transmute(addr), mem::size_of::<libc::sockaddr_can>() as libc::socklen_t),         
         }
     }
 }
@@ -537,6 +601,8 @@ impl hash::Hash for SockAddr {
             SockAddr::Unix(ref a) => a.hash(s),
             #[cfg(any(target_os = "linux", target_os = "android"))]
             SockAddr::Netlink(ref a) => a.hash(s),
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            SockAddr::Can(ref a) => a.hash(s), 
         }
     }
 }
@@ -554,6 +620,8 @@ impl fmt::Display for SockAddr {
             SockAddr::Unix(ref unix) => unix.fmt(f),
             #[cfg(any(target_os = "linux", target_os = "android"))]
             SockAddr::Netlink(ref nl) => nl.fmt(f),
+            #[cfg(any(target_os = "linux", target_os = "android"))]
+            SockAddr::Can(ref can) => can.fmt(f),
         }
     }
 }
@@ -561,7 +629,7 @@ impl fmt::Display for SockAddr {
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub mod netlink {
     use ::sys::socket::addr::{AddressFamily};
-    use libc::{sa_family_t, sockaddr_nl};
+    use libc::{sa_family_t, sockaddr_nl };
     use std::{fmt, mem};
     use std::hash::{Hash, Hasher};
 

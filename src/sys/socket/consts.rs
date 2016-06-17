@@ -10,6 +10,7 @@ mod os {
     pub const AF_INET6: c_int = 10;
     pub const AF_NETLINK: c_int = 16;
     pub const AF_PACKET: c_int = 17;
+    pub const AF_CAN: c_int = 29;
 
     pub const SOCK_STREAM: c_int = 1;
     pub const SOCK_DGRAM: c_int = 2;
@@ -137,6 +138,7 @@ mod os {
     pub const SOCK_SEQPACKET: c_int = 5;
     pub const SOCK_RAW: c_int = 3;
     pub const SOCK_RDM: c_int = 4;
+    pub const SOCK_CAN: c_int = 4;
 
     pub const SOL_SOCKET: c_int = 0xffff;
     pub const IPPROTO_IP: c_int = 0;

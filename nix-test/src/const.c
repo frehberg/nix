@@ -248,6 +248,7 @@ get_int_const(const char* err) {
     GET_CONST(AF_LOCAL);
     GET_CONST(AF_INET);
     GET_CONST(AF_INET6);
+    GET_CONST(AF_CAN);
     GET_CONST(SOCK_STREAM);
     GET_CONST(SOCK_DGRAM);
     GET_CONST(SOCK_SEQPACKET);

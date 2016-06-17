@@ -1,11 +1,12 @@
-use nix::sys::socket::{InetAddr, UnixAddr, getsockname};
+use nix::sys::socket::{InetAddr, UnixAddr, SockAddr, getsockname, bind};
+use nix::net::if_::*;
 use std::mem;
 use std::net::{self, Ipv6Addr, SocketAddr, SocketAddrV6};
 use std::path::Path;
 use std::str::FromStr;
 use std::os::unix::io::{AsRawFd, RawFd};
 use ports::localhost;
-use libc::c_char;
+use libc::{c_char, c_int};
 
 #[test]
 pub fn test_inetv4_addr_to_sock_addr() {
@@ -71,6 +72,34 @@ pub fn test_getsockname() {
     let res = getsockname(sock.as_raw_fd()).unwrap();
 
     assert_eq!(addr, res.to_str());
+}
+
+
+const VCAN: &'static [u8] = b"vcan0";
+
+
+#[test]
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub fn test_can_socket() {
+    use nix::unistd::{close};
+    use nix::sys::socket::{socket, AddressFamily, SockType, SockFlag};
+
+    const TYPE_CAN_RAW : c_int = 1;
+    let fd = socket(AddressFamily::Can, SockType::Raw,
+                                SockFlag::empty(), TYPE_CAN_RAW)
+                     .unwrap();
+	
+	let can_dev_idx = if_nametoindex(&VCAN[..]).unwrap();
+	print!("can dev: {}\n", can_dev_idx);
+	
+    assert!(if_nametoindex(&VCAN[..]).is_ok());
+
+	let canaddr : SockAddr = SockAddr::new_can(can_dev_idx);
+	
+    assert!(bind(fd, &canaddr).is_ok());
+      
+    // assert_eq!(&buf[..], b"hello");
+    assert!(close(fd).is_ok());
 }
 
 #[test]
